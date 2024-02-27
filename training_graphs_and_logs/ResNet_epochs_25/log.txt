@@ -1,0 +1,1 @@
+Epoch 1: Training accuracy: 0.853956, Validation accuracy: 0.883789, Training loss: 0.00511612, Validation loss: 0.00445766
