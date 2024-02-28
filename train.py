@@ -10,6 +10,8 @@ import torchvision.models as models
 import torch.backends.cudnn as cudnn
 from utils.model_selector import model_selector
 from utils import config
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.cuda.amp import autocast, GradScaler
 
 
 def plot_and_save_training_results(data, label, num_epochs, save_path):
@@ -26,7 +28,7 @@ def plot_and_save_training_results(data, label, num_epochs, save_path):
     print(f"Training graph saved to {save_path}")
 
 
-def train_val_step(dataloader, model, loss_function, optimizer, device):
+def train_val_step(dataloader, model, loss_function, optimizer, device, scaler=None):
     if optimizer is not None:
         model.train()
     else:
@@ -39,17 +41,20 @@ def train_val_step(dataloader, model, loss_function, optimizer, device):
     for data in dataloader:
         image, labels = data
         image, labels = image.to(device), labels.to(device)
-        outputs = model(image)
-        loss = loss_function(outputs, labels)
+
+        with autocast():
+            outputs = model(image)
+            loss = loss_function(outputs, labels)
+
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
+
         if optimizer is not None:
             optimizer.zero_grad()
-            # perform backpropagation
-            loss.backward()
-            # update the model parameters
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
         running_loss += loss.item()
 
@@ -66,18 +71,24 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
     criterion = torch.nn.CrossEntropyLoss()
 
     model_selector(model, 2)
+    # model = nn.DataParallel(model).to(device)
     model.to(device)
 
-    optimizer = optim.SGD(model.parameters(), lr=config.LR, momentum=0.9)
+    optimizer = optim.SGD(model.parameters(), lr=config.LR)
+
+    scheduler = ReduceLROnPlateau(optimizer, threshold=0.01, factor=0.1, patience=3, min_lr=1e-5, verbose=True)
+
+    scaler = GradScaler()
 
     accuracy_tracking = {'train': [], 'val': []}
     loss_tracking = {'train': [], 'val': []}
     best_loss = float('inf')
+    num_of_actual_epochs = 1
 
     # Early stopping
     patience = 5
-    minDelta = 0.01
-    currentPatience = 0
+    min_delta = 0.0001
+    current_patience = 0
 
     os.makedirs(graphs_and_logs_save_path, exist_ok=True)
 
@@ -86,7 +97,7 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
 
     # we iterate for the specified number of epochs
     for epoch in tqdm(range(num_epochs), desc="Epochs", unit="epoch"):
-        training_loss, training_accuracy = train_val_step(train_loader, model, criterion, optimizer, device)
+        training_loss, training_accuracy = train_val_step(train_loader, model, criterion, optimizer, device, scaler)
         loss_tracking['train'].append(training_loss)
         accuracy_tracking['train'].append(training_accuracy)
 
@@ -110,6 +121,8 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
                 print('Early stopping triggered.')
                 break
 
+            scheduler.step(val_loss)
+
         print(f'Training accuracy: {training_accuracy:.6}, Validation accuracy: {val_accuracy:.6}')
         print(f'Training loss: {training_loss:.6}, Validation loss: {val_loss:.6}')
 
@@ -118,10 +131,12 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
                        f'Training accuracy: {training_accuracy:.6}, Validation accuracy: {val_accuracy:.6}, '
                        f'Training loss: {training_loss:.6}, Validation loss: {val_loss:.6}\n')
 
+        num_of_actual_epochs +=1
+
     print('\nFinished Training\n')
 
-    plot_and_save_training_results(loss_tracking, 'loss', num_epochs, graphs_and_logs_save_path)
-    plot_and_save_training_results(accuracy_tracking, 'accuracy', num_epochs, graphs_and_logs_save_path)
+    plot_and_save_training_results(loss_tracking, 'loss', num_of_actual_epochs, graphs_and_logs_save_path)
+    plot_and_save_training_results(accuracy_tracking, 'accuracy', num_of_actual_epochs, graphs_and_logs_save_path)
 
     log_file.close()
 
