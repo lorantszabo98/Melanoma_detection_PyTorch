@@ -74,6 +74,11 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
     loss_tracking = {'train': [], 'val': []}
     best_loss = float('inf')
 
+    # Early stopping
+    patience = 5
+    minDelta = 0.01
+    currentPatience = 0
+
     os.makedirs(graphs_and_logs_save_path, exist_ok=True)
 
     log_file_path = os.path.join(graphs_and_logs_save_path, 'log.txt')
@@ -89,10 +94,21 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
             val_loss, val_accuracy = train_val_step(val_loader, model, criterion, None, device)
             loss_tracking['val'].append(val_loss)
             accuracy_tracking['val'].append(val_accuracy)
-            if val_loss < best_loss:
-                print('Saving best model')
-                save_model('./trained_models', model, num_epochs, additional_text=additional_text, augmentation=augmentation)
+            if val_loss < best_loss - min_delta:
                 best_loss = val_loss
+                current_patience = 0
+
+                # Save the model when a new best loss is found
+                print('Saving best model')
+                save_model('./trained_models', model, num_epochs, additional_text=additional_text,
+                           augmentation=augmentation)
+            else:
+                current_patience += 1
+
+                # Early stopping
+            if current_patience >= patience:
+                print('Early stopping triggered.')
+                break
 
         print(f'Training accuracy: {training_accuracy:.6}, Validation accuracy: {val_accuracy:.6}')
         print(f'Training loss: {training_loss:.6}, Validation loss: {val_loss:.6}')
