@@ -16,7 +16,6 @@ from utils import config
 
 
 def display_random_predictions(model, num_epochs ,test_loader, class_labels, num_images=8, additional_text='', augmentation=''):
-
     model_selector(model, 2)
     load_model('./trained_models', model, number_of_epochs=num_epochs, additional_text=additional_text, augmentation=augmentation)
     # set model to evaluation mode
@@ -52,12 +51,20 @@ def display_random_predictions(model, num_epochs ,test_loader, class_labels, num
                     # turns of the axis
                     ax.axis('off')
                     #  sets the title of the subplot
-                    ax.set_title(f'predicted: {class_labels[preds[j]]}')
+                    # sets the title of the subplot with actual and predicted labels
+                    actual_label = class_labels[labels[j].item()]
+                    predicted_label = class_labels[preds[j].item()]
+
+                    # Set the title color based on match or mismatch
+                    title_color = 'green' if actual_label == predicted_label else 'red'
+
+                    ax.set_title(f'Actual: {actual_label}, Predicted: {predicted_label}', color=title_color)
 
                     # convert the image tensor to NumPy array and transpose
                     img = np.transpose(images.cpu().data[j].numpy(), (1, 2, 0))
+
                     # unnormalize if normalization was applied during data loading
-                    img = img * np.array([0.5, 0.5, 0.5]) + np.array([0.5, 0.5, 0.5])
+                    img = img * np.array(config.MEAN) + np.array(config.STD)
 
                     # show the image in the subplot
                     ax.imshow(img)
@@ -69,10 +76,11 @@ def display_random_predictions(model, num_epochs ,test_loader, class_labels, num
 
 
 def evaluate(model, num_epochs, test_loader, additional_text='', augmentation='', model_structure=False):
+    model_selector(model, 2)
+
     load_model('./trained_models', model, number_of_epochs=num_epochs, additional_text=additional_text,
                augmentation=augmentation)
 
-    model_selector(model, 2)
     model.eval()
     y_true = []
     y_pred = []
@@ -149,4 +157,4 @@ if __name__ == "__main__":
     print(report)
 
     # Try the model on the testing dataset
-    display_random_predictions(model, config.NUMBER_OF_EPOCHS , test_loader, class_labels, mode='fine_tuning', augmentation='aug')
+    display_random_predictions(model, config.NUMBER_OF_EPOCHS, test_loader, class_labels)
