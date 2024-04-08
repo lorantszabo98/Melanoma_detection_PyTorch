@@ -126,6 +126,7 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
                 # Early stopping
             if current_patience >= patience:
                 print('Early stopping triggered.')
+                early_stopping = True
                 break
 
             scheduler.step(val_loss)
