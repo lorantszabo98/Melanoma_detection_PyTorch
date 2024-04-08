@@ -41,6 +41,8 @@ def train_val_step(dataloader, model, loss_function, optimizer, device, scaler=N
     for data in dataloader:
         image, labels = data
         image, labels = image.to(device), labels.to(device)
+        # Uncomment it when you use BCEWithLogitsLoss() criterion
+        labels = labels.unsqueeze(1).float()
 
         with autocast():
             outputs = model(image)
@@ -67,16 +69,20 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
     model_name = model.__class__.__name__
     graphs_and_logs_save_path = os.path.join(graphs_and_logs_save_directory, f"{model_name}_epochs_{num_epochs}")
 
+    model_selector(model, 1)
+    # model_selector(model, 2)
+
     # define criterion and optimizer for training
     criterion = torch.nn.CrossEntropyLoss()
+    # criterion = nn.BCEWithLogitsLoss()
 
-    model_selector(model, 2)
+
     # model = nn.DataParallel(model).to(device)
     model.to(device)
 
     optimizer = optim.SGD(model.parameters(), lr=config.LR)
 
-    scheduler = ReduceLROnPlateau(optimizer, threshold=0.01, factor=0.1, patience=3, min_lr=1e-5, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, threshold=0.01, factor=0.1, patience=3, min_lr=1e-6, verbose=True)
 
     scaler = GradScaler()
 
@@ -86,8 +92,9 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
     num_of_actual_epochs = 1
 
     # Early stopping
+    early_stopping = False
     patience = 5
-    min_delta = 0.0001
+    min_delta = 0.00001
     current_patience = 0
 
     os.makedirs(graphs_and_logs_save_path, exist_ok=True)
@@ -131,12 +138,16 @@ def train(model, train_loader, val_loader, device, num_epochs=5, additional_text
                        f'Training accuracy: {training_accuracy:.6}, Validation accuracy: {val_accuracy:.6}, '
                        f'Training loss: {training_loss:.6}, Validation loss: {val_loss:.6}\n')
 
-        num_of_actual_epochs +=1
+        num_of_actual_epochs += 1
 
     print('\nFinished Training\n')
 
-    plot_and_save_training_results(loss_tracking, 'loss', num_of_actual_epochs, graphs_and_logs_save_path)
-    plot_and_save_training_results(accuracy_tracking, 'accuracy', num_of_actual_epochs, graphs_and_logs_save_path)
+    if early_stopping:
+        plot_and_save_training_results(loss_tracking, 'loss', num_of_actual_epochs, graphs_and_logs_save_path)
+        plot_and_save_training_results(accuracy_tracking, 'accuracy', num_of_actual_epochs, graphs_and_logs_save_path)
+    else:
+        plot_and_save_training_results(loss_tracking, 'loss', num_epochs, graphs_and_logs_save_path)
+        plot_and_save_training_results(accuracy_tracking, 'accuracy', num_epochs, graphs_and_logs_save_path)
 
     log_file.close()
 
@@ -149,6 +160,7 @@ if __name__ == "__main__":
     # model = models.resnet34(weights='IMAGENET1K_V1')
     # model = models.mobilenet_v3_large(pretrained=True)
     # model = models.mobilenet_v2(pretrained=True)
+    # model = models.efficientnet_v2_l(weights='IMAGENET1K_V1')
 
     train_loader, val_loader, _ = get_dataloaders()
-    train(model, train_loader, val_loader, config.DEVICE, num_epochs=config.NUMBER_OF_EPOCHS)
+    train(model, train_loader, val_loader, config.DEVICE, num_epochs=config.NUMBER_OF_EPOCHS, augmentation='aug')
